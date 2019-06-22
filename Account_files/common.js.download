@@ -1,0 +1,1 @@
+﻿$(document).ready(function(){$('footer .footer-nav #popup').on('click',function(){var $fpopup=$('#footer-popup-'+$(this).data('tag'));$("html, body").animate({scrollTop:0},"slow");$('.footer-popup').fadeOut(300);$fpopup.fadeIn(500);return false;});$('.footer-popup .close-button').on('click',function(){$(this).parent().fadeOut(300);});});

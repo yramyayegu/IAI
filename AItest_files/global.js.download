@@ -1,0 +1,828 @@
+;
+(function(window, document, undefined) {
+    "use strict";
+
+    /**
+     * The actual constructor of the Global object
+     */
+    var GlobalImpl = {
+        _version: 1.95,
+        _config: {
+            'webregUrl': 'https://education-stage.oracle.com/webreg/ShoppingCart',
+            'addItemUrl': 'https://education-stage.oracle.com/webreg/AddItem',
+            'countryParams': 'org_id=41&lang=NL&territory_code=NL',
+            'addItemParams': 'arg=1&doccode=',
+            'addPartNumberParams': 'arg=1&partnumber='
+        }
+    };
+
+    var Global = function() {};
+    Global.prototype = GlobalImpl;
+
+    //We overwrite the constructor name, so we can reference the object as Global in the widget context
+    Global = new Global();
+
+    /**
+     * Returns the url pointing to webreg shoppipng cart
+     * @returns {string}
+     * @access private
+     */
+    function getWebregUrl() {
+        return GlobalImpl._config.webregUrl + '?' + GlobalImpl._config.addItemParams;
+    }
+
+    /**
+     * Returns the string with the hardcoded parameters that shopping cart uses for Netherlands
+     * (org_id = 41, language code = NL, territory code = NL)
+     * @returns {string}
+     * @access private
+     */
+    function getCountryParams() {
+        return GlobalImpl._config.countryParams;
+    }
+
+    /**
+     * Returns the url pointing to add item endpoint (for ajax calls when adding items)
+     * @returns {string}
+     * @access private
+     */
+    function getAddItemUrl() {
+        return GlobalImpl._config.addItemUrl + '?' + GlobalImpl._config.addItemParams;
+    }
+
+    /**
+     * Returns the string to add an item into cart using part number as identifier, instead of doccode
+     * @returns {string}
+     * @access private
+     * @since 0.3
+     */
+    function getWebregPartNumberUrl() {
+        return GlobalImpl._config.webregUrl + '?' + GlobalImpl._config.addPartNumberParams;
+    }
+
+    /**
+     * Returns the string to see webreg cart (not adding any item)
+     * @returns {string}
+     @ @access private
+     */
+    function getViewCartUrl() {
+        return GlobalImpl._config.webregUrl + '?' + getCountryParams();
+    }
+
+    /**
+     * variable to hold countriesConfig.json data
+     @ @access private
+     */
+    var countriesConfig;
+
+    /**
+     * Returns json data (countriesConfig.json)
+     * @returns {json}
+     @ @access private
+     */
+    function getAddressFormats() {
+        if (!countriesConfig){
+             loadJson(function(_res){
+                 countriesConfig = _res;
+             });
+            var inter = setInterval(function(){
+                if(countriesConfig){
+                  clearInterval(inter);
+                  return countriesConfig;
+                }
+            },200);
+        }
+        else
+           return countriesConfig;
+    }
+
+    /**
+     * Returns json data (countriesConfig.json)
+     * @returns {json}
+     @ @access private
+     */
+    function loadJson(callback) {
+        var data;
+        $.ajax({
+            async: true,
+            url: '/midtier/json/countriesConfig.json',
+            dataType: 'json',
+            success: function(response) {
+                callback(response);
+            }
+        });
+      //  return data;
+    }
+
+    /**
+     * Returns void
+     * @returns void
+     @ @access public
+     */
+    GlobalImpl.loadCountries = function() {
+        getAddressFormats();
+    }
+    /**
+     * Returns country Node
+     * @returns {Object}
+     @ @access public
+     */
+    GlobalImpl.getCountryNode = function(country) {
+        var ret;
+        var cjson = getAddressFormats();
+
+        return cjson[country]?cjson[country]:null;
+    }
+    /**
+     * Returns field and country specific address element requirement
+     * @returns {String/Boolean/Integer}
+     @ @access public
+     */
+    GlobalImpl.getFormatValueByConutry = function(field, country) {
+        var ret;
+        var cjson = getAddressFormats();
+        var tJson;
+
+        if (cjson !== undefined)
+            if (cjson[country] !== undefined)
+                if (cjson[country]['validation'] !== undefined)
+                    tJson = cjson[country]['validation'];
+
+        if (tJson !== undefined && tJson[field] !== undefined) //if ((tJson !== undefined || tJson !== {} ) && field !== undefined && tJson[field] !== undefined)
+            ret = tJson[field];
+        else if (country !== 'GLOBAL') //if (defaultAddressFormats[field] !== undefined)
+            ret = GlobalImpl.getFormatValueByConutry(field, 'GLOBAL'); //defaultAddressFormats[field];
+        return ret;
+    }
+
+    /**
+     * Returns whether or not the field to be displayed for the given country
+     * @returns {boolean}
+     @ @access public
+     */
+    GlobalImpl.isInputDisplay = function(field, country) {
+        var ret = true;
+        var tValue = GlobalImpl.getFormatValueByConutry(field, country);
+
+        if (tValue !== undefined)
+            if (tValue.toUpperCase() === 'R' || tValue.toUpperCase() === 'D')
+                ret = true;
+            else if (tValue.toUpperCase() === 'X')
+            ret = false;
+        return ret;
+    }
+
+    /**
+     * Returns whether or not the field is required for the given country
+     * @returns {boolean}
+     @ @access public
+     */
+    GlobalImpl.isInputRequired = function(field, country) {
+        var ret = true;
+        var tFormat = GlobalImpl.getFormatValueByConutry(field, country);
+
+        if (tFormat !== undefined)
+            if (tFormat.toUpperCase() === 'R')
+                ret = true;
+            else
+                ret = false;
+        return ret;
+    }
+
+    /**
+     * Returns whether or not the field value is valid for the given country
+     * @returns {boolean}
+     @ @access public
+     */
+    GlobalImpl.isInputValueValid = function(field, strValue, country) {
+        var ret = true;
+
+        if (strValue === undefined ||
+            strValue === null || strValue.trim() === '' || !strValue) {
+            if (GlobalImpl.isInputRequired(field, country))
+                ret = false;
+        } else if (strValue !== undefined &&
+            strValue !== null && strValue.trim() !== '' && strValue) {
+            var patternField = field + '-pattern';
+            var tValuePattern = GlobalImpl.getFormatValueByConutry(patternField, country);
+
+            if (tValuePattern) {
+                ret = new RegExp(tValuePattern).test(strValue);
+            }
+        }
+
+        return ret;
+    }
+
+    /**
+     * Global function to add an item to webreg cart.
+     * @param {string} skuId - Identifier of SKU, which contains the wddi and event id (if applicable)
+     * @access public
+     */
+    GlobalImpl.addToWebregCart = function(skuId) {
+        var splitedParameters = skuId.split(/v/g);
+        var delType = splitedParameters[0];
+        var wddiId = splitedParameters[1];
+        var classId = (delType === "ILT" || delType === "LVC") ? splitedParameters[2] : "";
+        var webregCartUrl = getWebregUrl() + wddiId + '&' + getCountryParams() + "&event_id=" + classId + "&p_return_url=" + encodeURIComponent(document.location.href + '?loc=nl'); //Using encodeURIComponent instead of escape
+        document.location.href = webregCartUrl;
+    };
+
+    /**
+     * Global function to go to shopping cart, without adding any item
+     * @access public
+     */
+    GlobalImpl.goToWebregCart = function() {
+        var gotoUrl = getViewCartUrl() + "&p_return_url=" + encodeURIComponent(document.location.href + '?loc=nl'); //Using encodeURIComponent instead of escape
+        document.location.href = gotoUrl;
+    };
+
+    /**
+     * Global function to add two items into the cart.
+     * First item (identified by skuId1) is added with an ajax call. Second item (skuId2) is added only if the first attempt is successful, using the regular method (addToWebregCart)
+     * @param {string} skuId1 - Identifier of first item to be added to cart
+     * @param {string} skuId2 - Identifier of second item to be added to cart
+     * @access public
+     * @since 0.2
+     */
+    GlobalImpl.addItem = function(skuId1, skuId2) {
+        var splitedParameters = skuId1.split(/v/g);
+        var delType = splitedParameters[0];
+        var wddiId = splitedParameters[1];
+        var classId = (delType === "ILT" || delType === "LVC") ? splitedParameters[2] : "";
+        var addItemUrl = getAddItemUrl() + wddiId + '&' + getCountryParams() + "&event_id=" + classId;
+
+        $.ajax({
+            type: "GET",
+            async: true,
+            url: addItemUrl,
+            dataType: "xml",
+            success: function(xml) {
+                if ($(xml).find('response > result').text() === 'OK') {
+                    GlobalImpl.addToWebregCartPartNumber(skuId2); //Now it will be using part number as id
+                } else {
+                    //Adding an item returned a failed status. At this moment, I'm just alerting the error message, consider displaying the message properly, in a nice modal
+                    alert($xml.find('response > message').text());
+                }
+            },
+            error: function() {
+                alert('There was an error while adding your selection to cart, please try again later');
+            }
+        });
+    };
+
+    //Regular RestClient testChange
+    GlobalImpl.callRest = function(wid, opc, callback) {
+        var method = opc.method ? opc.method : "GET";
+        var reqPar = opc.reqPar ? opc.reqPar : "?";
+        var data = opc.data ? opc.data : "";
+        var serv = opc.service ? opc.service : "";
+        var addHeader = opc.addHeader ? opc.addHeader : false;
+        var tokenSecr = wid.user().client().tokenSecret;
+        var lang = (window.localStorage.getItem("occs_user_content_locale-storefrontUI")) ? JSON.parse(window.localStorage.getItem("occs_user_content_locale-storefrontUI"))[0].name : "en";
+        var siteId = wid.site().siteInfo.id;
+
+        if (serv === "") {
+            callback({
+                err: "Service Required"
+            });
+            return;
+        }
+
+        var callHeaders = {
+            'x-ccsite': siteId,
+            'X-CCAsset-Language': lang,
+            'Authorization': 'Bearer ' + tokenSecr
+        };
+        if (addHeader) {
+            for (var key in addHeader) {
+                callHeaders[key] = addHeader[key];
+            }
+        }
+
+        $.ajax({
+            type: method,
+            async: true,
+            contentType: 'application/json; charset=utf-8',
+            dataType: 'json',
+            headers: callHeaders,
+            url: '/ccstoreui/v1/' + serv + '/' + reqPar,
+            data: data,
+            success: function(result) {
+                // console.log("Global Worked");
+                callback(result);
+                return;
+            },
+            error: function(_err) {
+                callback({
+                    err: _err
+                });
+                return;
+            }
+        });
+    };
+
+    GlobalImpl.getParameterByName = function(name) {
+        name = name.replace(/[\[]/, "\\[").replace(/[\]]/, "\\]");
+        var regex = new RegExp("[\\?&]" + name + "=([^&#]*)"),
+            results = regex.exec(location.search);
+        return results === null ? "" : decodeURIComponent(results[1].replace(/\+/g, " "));
+    };
+
+    /**
+     * It add a css file or a list of them into the current loaded page
+     * @param {string||array} pathLst - Single or Multiple paths pointing to css files
+     * @access public
+     * @since 0.6
+     */
+    GlobalImpl.cssLoaded = {};
+    GlobalImpl.currLocPath = "";
+    GlobalImpl.loadCSS = function(pathLst, callback) {
+
+        if (!pathLst)
+            return;
+
+        if (typeof pathLst === "string") {
+            pathLst = [pathLst];
+            console.log("Load Single Path");
+        }
+        //CTH: remove all preloaded from html
+        //var loadedCounter = 0;
+        console.log(location.href);
+        if(location.href !== GlobalImpl.currLocPath){ // This condition removes css in case we change page or first time calling
+            GlobalImpl.currLocPath = location.href;
+            for(var stId in GlobalImpl.cssLoaded){
+            //   if(stId !== "_midtier_css_style")
+                 $("head #"+stId).remove();
+            }
+        }
+
+        for (var i in pathLst) {
+                var cssObjId = pathLst[i].replace(/\//g, "_").replace(".css", "");
+                if (!GlobalImpl.cssLoaded[cssObjId]) {
+                    $.ajax({
+                        url: pathLst[i],
+                        success: function(resp) {
+                          if(resp){
+                            var moreStyles = $("<style id=" + this.url.replace(/\//g, "_").replace(".css", "") + ">" + resp + "</style>");
+                            $("head").append(moreStyles);
+                            console.log("Loaded" + this.url);
+                            GlobalImpl.cssLoaded[this.url.replace(/\//g, "_").replace(".css", "")] = moreStyles;
+                          //  loadedCounter++;
+                           }
+                           else{
+                             console.log(this.url + "Not Loaded Correctly");
+                           }
+                        }
+                    });
+                }
+                else{
+                //  if(cssObjId !== "_midtier_css_style")
+                      $("head").append(GlobalImpl.cssLoaded[cssObjId]);
+                    //  loadedCounter++;
+                }
+          }
+
+/**
+          var inter = setInterval(function(){
+              if(loadedCounter >= pathLst.length){
+                       var myVar = setInterval(function(){
+                             if ( $('#_midtier_css_style').length > 0 && $(".nav-mainmenu").length > 0) {
+                                     $('#_midtier_css_style').append(' j {color:red;} ');
+                                     clearInterval(myVar);
+                             }
+                           }, 400);
+                  clearInterval(inter);
+              }
+          },400);
+          **/
+    };
+
+    GlobalImpl.reloadCSS = function() {
+        for (var i in GlobalImpl.cssLoaded) {
+            var cssId =  GlobalImpl.cssLoaded[i].replace(/\//g, "_").replace(".css", "");
+            var currentContent = $('style#'+cssId).html();
+            $('style#'+cssId).remove();
+            var moreStyles = $("<style id=" + cssId+ ">" + currentContent + "</style>");
+            $("head").append(moreStyles);
+        }
+    };
+
+
+    GlobalImpl.cleanObservables = function(_wid, _attArr) {
+      for(var i in _attArr){
+        if(_wid[_attArr[i]]()){
+              var typeOfObs = typeof _wid[_attArr[i]]();
+              if (typeOfObs === "string") {
+                  console.log("Clean String "+_attArr[i]);
+                  _wid[_attArr[i]]("");
+              }
+              else if (typeOfObs === "boolean") {
+                  console.log("Clean Boolean "+_attArr[i]);
+                  _wid[_attArr[i]](false);
+              }
+              else if (typeOfObs === "object" && $.isArray(_wid[_attArr[i]]())) {
+                  console.log("Clean Array "+_attArr[i]);
+                  _wid[_attArr[i]]([]);
+              }
+              else  {
+                  console.log("Clean Object "+_attArr[i]);
+                  _wid[_attArr[i]](null);
+              }
+        }
+      }
+    };
+
+    /**
+     * Opens Loading DIV
+     * @param No Params
+     * @access public
+     * @since 0.6
+     */
+    GlobalImpl.openLoading = function(secDivId) {
+        var loadDiv = $("<div class=\"loadingDiv\"><i class=\"fa fa-spinner fa-spin\"></i></div>");
+        if (!secDivId){
+            if($("body .loadingDiv").length <= 0)
+                  $("body").prepend(loadDiv);
+        }
+        else {
+            if($(secDivId + " .loadingDiv").length <= 0){
+                $(secDivId).prepend(loadDiv);
+                $(secDivId + " .loadingDiv").css("position", "absolute");
+            }
+        }
+    };
+
+    /**
+     * Close Loading DIV
+     * @param No Params
+     * @access public
+     * @since 0.6
+     */
+    GlobalImpl.closeLoading = function(secDivId) {
+        if (!secDivId)
+            $(".loadingDiv").remove();
+        else
+            $(secDivId + " .loadingDiv").remove();
+    };
+    /**
+     * It adds an item to cart, using part number as identifier
+     * @param {string} skuId - Identifier of SKU, which contains the part number and event id (if applicable)
+     * @access public
+     * @since 0.3
+     */
+    GlobalImpl.addToWebregCartPartNumber = function(skuId) {
+        var splitedParameters = skuId.split(/v/g);
+        var delType = splitedParameters[0];
+        var wddiId = splitedParameters[1];
+        var classId = (delType === "ILT" || delType === "LVC") ? splitedParameters[2] : "";
+        var webregCartUrl = getWebregPartNumberUrl() + wddiId + '&' + getCountryParams() + "&event_id=" + classId + "&p_return_url=" + encodeURIComponent(document.location.href + '?loc=nl'); //Using encodeURIComponent instead of escape
+        document.location.href = webregCartUrl;
+    };
+
+    /**
+     * Hack for TOD, identical functionality than addItem, but using doccode for first call
+     * First item (identified by skuId1) is added with an ajax call. Second item (skuId2) is added only if the first attempt is successful, using the regular method (addToWebregCart)
+     * @param {string} skuId1 - Identifier of first item to be added to cart
+     * @param {string} skuId2 - Identifier of second item to be added to cart
+     * @access public
+     * @since 0.4
+     */
+    GlobalImpl.addItemTOD = function(skuId1, skuId2) {
+        var splitedParameters = skuId1.split(/v/g);
+        var delType = splitedParameters[0];
+        var wddiId = splitedParameters[1];
+        var classId = (delType === "ILT" || delType === "LVC") ? splitedParameters[2] : "";
+        var addItemUrl = getAddItemUrl() + wddiId + '&' + getCountryParams() + "&event_id=" + classId;
+
+        $.ajax({
+            type: "GET",
+            url: addItemUrl,
+            dataType: "xml",
+            success: function(xml) {
+                if ($(xml).find('response > result').text() === 'OK') {
+                    GlobalImpl.addToWebregCart(skuId2);
+                } else {
+                    //Adding an item returned a failed status. At this moment, I'm just alerting the error message, consider displaying the message properly, in a nice modal
+                    alert($xml.find('response > message').text());
+                }
+            },
+            error: function() {
+                alert('There was an error while adding your selection to cart, please try again later');
+            }
+        });
+    };
+
+    var saveNotLoggedItms = function(wid, _product){
+        var userLogged = wid.user().client().loggedIn;
+        if(!userLogged){
+            var noLoggedInItems = window.sessionStorage.getItem("noLoggedInItems");
+            noLoggedInItems = noLoggedInItems && noLoggedInItems!==""?JSON.parse(noLoggedInItems):[];
+            noLoggedInItems.push(_product);
+            window.sessionStorage.setItem("noLoggedInItems", JSON.stringify(noLoggedInItems));
+        }
+        else{
+            window.sessionStorage.removeItem("noLoggedInItems");
+        }
+    };
+    GlobalImpl.updateQuantityReadyProduct = function(wid, pubsub, notifier, _product, callback){
+        notifier.clearSuccess(wid.WIDGET_ID);
+        //   var newProduct = $.extend(true, {}, _product, _sku);
+        $.Topic(pubsub.topicNames.CART_UPDATE_QUANTITY).publishWith(_product, [{
+                message: "CART UPDATED"
+        }]);
+        if (callback) {
+            var cartItCount = wid.cart().numberOfItems();
+            var triesOut = 10;
+            var inter = setInterval(function() {
+                console.log("Previous Cart Count " + cartItCount);
+                console.log("Current Cart Count " + wid.cart().numberOfItems());
+                if (wid.cart().numberOfItems() > cartItCount || triesOut <= 0) {
+                    clearInterval(inter);                   
+                    callback({ok:!(triesOut <= 0),prod:_product});
+                }
+                else{
+                   triesOut--;
+                }
+            }, 400);
+        }
+    };
+
+    GlobalImpl.removeProductFromCart = function(wid, pubsub, notifier, _product, callback){
+        notifier.clearSuccess(wid.WIDGET_ID);
+        //   var newProduct = $.extend(true, {}, _product, _sku);
+        var cartItCount = wid.cart().numberOfItems();
+        $.Topic(pubsub.topicNames.CART_REMOVE).publishWith(_product, [{
+                message: "ITEM REMOVED"
+        }]);
+        if (callback) {            
+            var triesOut = 10;
+            var inter = setInterval(function() {
+                console.log("Previous Cart Count " + cartItCount);
+                console.log("Current Cart Count " + wid.cart().numberOfItems());
+                if (wid.cart().numberOfItems() > cartItCount || triesOut <= 0) {
+                    clearInterval(inter);                   
+                    callback({ok:!(triesOut <= 0),prod:_product});
+                }
+                else{
+                   triesOut--;
+                }
+            }, 400);
+        }
+    };
+
+    GlobalImpl.addToCartReadyProduct = function(wid, pubsub, notifier, _product, callback){
+        notifier.clearSuccess(wid.WIDGET_ID);
+        //   var newProduct = $.extend(true, {}, _product, _sku);
+        $.Topic(pubsub.topicNames.CART_ADD).publishWith(_product, function() {
+            console.log("ADDDDED 2 CARTTZZ");
+        });
+        if (callback) {
+            var cartItCount = wid.cart().numberOfItems();
+            var triesOut = 10;
+            var inter = setInterval(function() {
+                console.log("Previous Cart Count " + cartItCount);
+                console.log("Current Cart Count " + wid.cart().numberOfItems());
+                if (wid.cart().numberOfItems() > cartItCount || triesOut <= 0) {
+                    clearInterval(inter);
+                    saveNotLoggedItms(wid, _product);
+                    callback({ok:!(triesOut <= 0),prod:_product});
+                }
+                else{
+                   triesOut--;
+                }
+            }, 400);
+        }
+    };
+
+    GlobalImpl.addToCart = function(wid, pubsub, notifier, skuPar, callback) {
+        var skuId;
+        var prodId;
+        var quantity = 1;
+        var widget = wid;
+        var globObj = this;
+        if (typeof skuPar === "object" && skuPar.productObj && skuPar.skuObj){              
+            skuPar.productObj.orderQuantity = skuPar.quantity||1;
+            skuPar.productObj.childSKUs = [skuPar.skuObj];
+            if(skuPar.productObj.displayName && skuPar.productObj.displayName !== "" ){
+                globObj.addToCartReadyProduct(wid, pubsub, notifier, skuPar.productObj, callback);
+                return ;
+            }
+            /** 
+            else{
+                globObj.callRest(wid, {
+                    service: "products/" + (skuPar.productObj.id||skuPar.productObj.repositoryId),
+                    reqPar: "?fields=displayName,id,repositoryId,relatedProducts&storePriceListGroupId="+wid.site().selectedPriceListGroup().id
+                }, function(_product) {
+                    _product.orderQuantity = skuPar.quantity||1;
+                    _product.childSKUs = [skuPar.skuObj];
+                    globObj.addToCartReadyProduct(wid, pubsub, notifier, _product, callback);
+                    return ;
+                });
+            }
+            **/
+        }
+
+        if (typeof skuPar === "object") {
+            skuId = skuPar.skuId || skuPar.skuObj.repositoryId;
+            prodId = skuPar.prodId || skuPar.productObj.id || skuPar.productObj.repositoryId;
+            quantity = skuPar.quantity||1;
+        } else if (typeof skuPar === "string") {
+            skuId = skuPar;
+            prodId = widget.product().repositoryId();
+        }
+        console.log('Adding sku id: ' + skuId);
+        //  globObj.openLoading();
+        globObj.callRest(widget, {
+            service: "products/" + prodId,
+            reqPar: "?fields=displayName,id,repositoryId,relatedProducts&storePriceListGroupId="+wid.site().selectedPriceListGroup().id
+        }, function(_product) {
+            var _sku = {repositoryId : skuId, quantity: quantity};
+            _product.orderQuantity = quantity;
+            _product.childSKUs = [_sku];
+            globObj.addToCartReadyProduct(wid, pubsub, notifier, _product, callback);
+            /**  CTH: Enhance Global to add to cart
+            globObj.callRest(widget, {
+                service: "skus/" + skuId
+            }, function(_sku) {
+                // globObj.closeLoading();
+                if (_sku.err) {
+                    console.log(_sku.err);
+                    return;
+                }
+                //console.log(_sku);
+                _product.orderQuantity = quantity;
+                _product.childSKUs = [_sku];
+                addToCartReadyProduct(wid, pubsub, notifier, _product, callback);
+            });
+            **/
+        });
+    };
+
+
+    GlobalImpl.addPackagesToCart = function(wid, pubsub, notifier, prodId, skuId, callback) {
+        console.log('Adding sku id: ' + skuId + ' Repository Id: ' + prodId);
+        var widget = wid;
+        var globObj = this;
+        //globObj.callRest(widget, {service:"products/"+widget.product().repositoryId()}, function(_product){
+        globObj.callRest(widget, {
+            service: "products/" + prodId
+        }, function(_product) {
+            globObj.callRest(widget, {
+                service: "skus/" + skuId
+            }, function(_sku) {
+                if (_sku.err) {
+                    console.log(_sku.err);
+                    return;
+                }
+                console.log(_sku);
+                notifier.clearSuccess(widget.WIDGET_ID);
+                //   var newProduct = $.extend(true, {}, _product, _sku);
+                _product.orderQuantity = 1;
+                _product.childSKUs = [_sku];
+                $.Topic(pubsub.topicNames.CART_ADD).publishWith(_product, function() {
+                    console.log("ADDDDED 2 CARTTZZ");
+                });
+                if (callback) {
+                    var cartItCount = wid.cart().allItems().length;
+                    var inter = setInterval(function() {
+                        console.log("Loaded Sofar " + cartItCount);
+                        if (wid.cart().allItems().length > cartItCount) {
+                            clearInterval(inter);
+                            callback();
+                        }
+                    }, 400);
+                }
+
+            });
+        });
+    };
+
+    GlobalImpl.openDialogBox = function(params){
+         var title = params.title||"";
+         var msg = params.msg||params||"";
+         var modalDialHtml = "<div class=\"modal fade\" id=\"messageDialogBox\" tabindex=\"-2\" role=\"dialog\" aria-hidden=\"true\">";
+            modalDialHtml += "  <div class=\"modal-dialog modal-lg\"> ";
+            modalDialHtml += "      <div class=\"modal-content\"> ";
+            modalDialHtml += "     <div class=\"modal-header\"> ";
+            modalDialHtml += "              <button type=\"button\" ";
+            modalDialHtml += "                      class=\"close\"  ";
+            modalDialHtml += "                          aria-label=\"Close\"  ";
+            modalDialHtml += "                          data-dismiss=\"modal\" > ";
+            modalDialHtml += "                          <span aria-hidden=\"true\">×</span> ";
+            modalDialHtml += "                  </button> ";
+            modalDialHtml += "                          <h4 class=\"modal-title\" ></h4> ";
+            modalDialHtml += "                  </div> ";
+            modalDialHtml += "                  <div class=\"modal-body\"></div> ";
+            modalDialHtml += "                  <div class=\"modal-footer\"> ";
+            modalDialHtml += "                          <button type=\"button\" data-dismiss=\"modal\" class=\"btn btn-default\">Close</button> ";
+            modalDialHtml += "                  </div> ";
+            modalDialHtml += "          </div> ";
+            modalDialHtml += "  </div> ";
+            modalDialHtml += "</div>";
+
+        //  var $modDial = $(modalDialHtml);
+          if($('#messageDialogBox').length <= 0){
+              $("body").append(modalDialHtml);
+          }
+          $("#messageDialogBox .modal-title").html(title);
+          $("#messageDialogBox .modal-body").html(msg);
+          $("#messageDialogBox").modal();
+    };
+
+    GlobalImpl.pauseVideo = function() {
+        var theProtocol = location.protocol, theURL = theProtocol + "//players.brightcove.net", iframeTag = document.querySelector("iframe"), win = iframeTag.contentWindow;
+        win.postMessage("pauseVideo", theURL);
+    };
+
+    GlobalImpl.remCurrency = function(total) {
+         total = ""+total;
+         return parseFloat(total.replace(/[^0-9\.]/ig,""));
+    };
+
+    GlobalImpl.formatCurrency = function(total, opc) {
+        var globObj = this;
+        var pref = opc?opc.symbol:"$";
+        var dec = opc?(opc.decimals||2):2;
+        pref = (pref === "none")?"":pref;
+        if(typeof total === "string")
+              total = globObj.remCurrency(total);
+        var neg = false;
+        if(total < 0) {
+            neg = true;
+            total = Math.abs(total);
+        }
+        var toGo = (neg ? "-"+pref : pref) + parseFloat(total, 10).toFixed(dec).replace(/(\d)(?=(\d{3})+\.)/g, "$1,").toString();
+        return toGo === pref+"NaN"?null:toGo;
+    };
+
+    /**
+     * Functions to balance bootstrap table's height
+     */
+    //Private
+    var balanceBTColPair = function(leftCol, rightCol){
+        var $mayorCol = (typeof leftCol === "string")?$(leftCol):leftCol;
+        var $minorCol = (typeof rightCol === "string")?$(rightCol):rightCol;
+        var heigMayor = parseFloat($mayorCol.css("height").replace("px",""));
+        var heigMinor = parseFloat($minorCol.css("height").replace("px",""));
+        var flowing = "right";
+        if((heigMayor - heigMinor) < 0){
+            var tmp = $minorCol;
+            $minorCol = $mayorCol;
+            $mayorCol = tmp;
+            tmp = heigMinor;
+            heigMinor = heigMayor;
+            heigMayor = tmp;
+            flowing = "left";
+        }    
+        var mainPxDiff = heigMayor - heigMinor;
+        var items2Move = Math.round(mainPxDiff / Math.round(heigMayor/$mayorCol.children().length));
+        //console.log(heigMayor - heigMinor);
+        //console.log("Items to move "+items2Move);
+        
+        while(items2Move > 0 && mainPxDiff > 200){
+            if(flowing === "right"){
+                $minorCol.prepend($mayorCol.children().last());
+                $mayorCol.children().last().remove(); 
+            }
+            else{
+                $minorCol.append($mayorCol.children().first());
+                $mayorCol.children().first().remove(); 
+            }
+            items2Move--;
+            mainPxDiff = Math.abs(parseFloat($mayorCol.css("height").replace("px","")) - parseFloat($minorCol.css("height").replace("px","")));
+        }
+       return (parseFloat($mayorCol.css("height").replace("px","")) > parseFloat($minorCol.css("height").replace("px","")))?$mayorCol:$minorCol;
+    };
+    
+    //Public
+    GlobalImpl.balanceBTCols = function(selArrs, selMay){
+        var globObj = this;
+        if(selArrs.length < 2)
+           return true;
+       for(var i in selArrs){
+        selArrs[i] = (typeof selArrs[i] === "string")?$(selArrs[i]):selArrs[i];
+       }
+       if(!selMay){
+            selMay = selArrs.splice(0,1);
+            selMay = selMay[0];
+        }
+       
+        var set2Balance =  selArrs.splice(0,1);
+        selMay = balanceBTColPair(selMay, set2Balance[0]);   
+        globObj.balanceBTCols(selArrs, selMay);
+    };
+    /** ---------------------------------------- **/
+
+    //CTH Fixes for IE 11 es6 Compatinility
+    if(window.navigator.userAgent.indexOf('Trident/') !== -1){
+        $("body").css("overflow-x","hidden");
+        $("head").append($("<script type='text/javascript' src='https://cdn.polyfill.io/v2/polyfill.js?features=es6'></script>"));
+    }
+
+    //Registering the Global object (Namespacing)
+    if (!window.Global || window.Global._version < 0.6)
+        window.Global = Global;
+})(window, document);
+
+Global.loadCountries();

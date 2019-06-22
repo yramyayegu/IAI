@@ -1,0 +1,62 @@
+define(
+  //-------------------------------------------------------------------
+  // DEPENDENCIES
+  //-------------------------------------------------------------------
+  ['ccLogger', 'storageApi'],
+
+  //-------------------------------------------------------------------
+  // MODULE DEFINITION
+  //-------------------------------------------------------------------
+  function(logger, storageApi) {
+
+    "use strict";
+
+    var GDPR_COOKIE_P13N_CONSENT_GRANTED = "GDPRCookieP13nConsentGranted",
+    GDPR_COOKIE_P13N_CONSENT_NOT_REQUIRED = "GDPRCookieP13nConsentNotRequired",
+
+    hasP13nCookieConsent = function(site) {
+      var cookieNames = [GDPR_COOKIE_P13N_CONSENT_GRANTED, GDPR_COOKIE_P13N_CONSENT_NOT_REQUIRED];
+      return hasCookieConsent(site, cookieNames);
+    },
+
+    // Checks for cookie consent
+    //
+    // Returns false if the site specifies that cookie consent is required AND 
+    // both the GDPR_COOKIE_P13N_CONSENT_GRANTED and GDPR_COOKIE_P13N_CONSENT_NOT_REQUIRED cookies have no value
+    hasCookieConsent = function(site, cookieNames) {
+      if (site === null || site === undefined) {
+        logger.warning("[gdprConsent] Could not determine site.");
+        return true;
+      } else {
+        if (!site.hasOwnProperty('requireGDPRCookieConsent')) {
+          // Return true if the site view model does not have the requireGDPRCookieConsent property.
+          return true;
+        } else {
+          // Per the spec, a null value for the consent required site property
+          // should be interpreted as no consent required
+          var consentRequired = site.requireGDPRCookieConsent;
+          if (!consentRequired) {
+            return true;
+          }
+
+          // Consent is required on this site, Check cookies.
+          for (var i = 0; i < cookieNames.length; i++) {
+            var cookie = cookieNames[i];
+            var value = storageApi.getInstance().readFromCookies(cookie);
+            // ANY value for the cookie (including "") counts as having the cookie set.
+            if (value !== undefined && value !== null) {
+              return true;
+            }
+          }
+          // None of the cookies were set
+          return false;
+        }
+      }
+    };
+
+    return {
+      hasP13nCookieConsent: hasP13nCookieConsent,
+      hasCookieConsent: hasCookieConsent
+    };
+  }
+);

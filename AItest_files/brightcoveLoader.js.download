@@ -1,0 +1,86 @@
+ (function($){
+        var defaults = {
+                   width: 0,
+                   height: 0
+            };
+        var loadOldPlayer = function(o, obj, bcpid,bctid){
+                 var iframe = $("<iframe allowfullscreen=\"\" mozallowfullscreen=\"\" webkitallowfullscreen=\"\" src=\"\" style=\"width: 100%; height: 100%; position: absolute; top: 0px; bottom: 0px; right: 0px; left: 0px;\"></iframe>");
+                 obj.empty();
+                 obj.append(iframe);
+                 var iwidth = o.width === 0?((iframe.css("width")).replace("px","")):o.width;
+                 var iheight = o.height === 0?((iframe.css("height")).replace("px","")):o.height;
+                 var url = "//link.brightcove.com/services/player/bcpid"+bcpid+"?bctid="+bctid+"&secureConnections=true&secureHTMLConnections=true&autoStart=false&width="+iwidth+"&height="+iheight;
+                 iframe.attr("src",url);
+        };
+        var loadNewPlayer = function(obj, videoId, dataAccount){
+            var vidCont = $("<div style=\"display: block; position: relative; max-width: 100%;\">"+
+                                "<div style=\"padding-top: 56.25%;\">"+
+                                  " <iframe "+
+                                  "   allowfullscreen=\"\"  "+
+                                  "   mozallowfullscreen=\"\" "+
+                                  "   webkitallowfullscreen=\"\" "+
+                                  "   src=\"//players.brightcove.net/"+dataAccount+"/default_default/index.html?videoId="+videoId+"\" "+
+                                  "   style=\"width: 100%; height: 100%; position: absolute; top: 0px; bottom: 0px; right: 0px; left: 0px; border:0px;\"> "+
+                                 "  </iframe> "+
+                              "   </div> "+
+                            "   </div>");
+            obj.append(vidCont);
+        }
+
+       var loadExternalPlayer = function(obj, videoId, type){
+
+           var videoUrl = "";
+           if(type == "youtube")
+               videoUrl =  "//youtube.com/embed/"+videoId;
+           else if(type == "vimeo")
+               videoUrl =  "//player.vimeo.com/video/"+videoId;
+
+            var vidCont = $("<div style=\"display: block; position: relative; max-width: 100%;\">"+
+                "<div style=\"padding-top: 56.25%;\">"+
+                  " <iframe "+
+                  "   allowfullscreen=\"\"  "+
+                  "   mozallowfullscreen=\"\" "+
+                  "   webkitallowfullscreen=\"\" "+
+                  "   frameborder=\"0\" "+
+                  "   src=\""+videoUrl+"\"   "+
+                  "   style=\"width: 100%; height: 100%; position: absolute; top: 0px; bottom: 0px; right: 0px; left: 0px; border=0\"> "+
+                 "  </iframe> "+
+              "   </div> "+
+            "  </div>");
+            obj.append(vidCont);
+        };
+
+     $.fn.extend({
+         brightcoveLoader: function(options) {
+            var options = $.extend(defaults, options);
+            return this.each(function() {
+                 var o =options;
+                 var obj = $(this);
+                 if(obj.attr("bcpid") !== undefined && obj.attr("bctid") !== undefined){
+                     loadOldPlayer(o,obj,obj.attr("bcpid"),obj.attr("bctid"));
+                     return ;
+                 }
+                 else if(obj.attr("video-id") !== undefined && obj.attr("data-account") !== undefined){
+                     loadNewPlayer(obj,obj.attr("video-id"),obj.attr("data-account"));
+                     return ;
+                 }
+            });
+        },
+        youtubeLoader: function(options){
+            var options = $.extend(defaults, options);
+            return this.each(function() {
+                var obj = $(this);
+                loadExternalPlayer(obj,obj.attr("video-id"),"youtube");
+                return ;
+            });
+        },
+        vimeoLoader: function(options){
+            var options = $.extend(defaults, options);
+            return this.each(function() {
+                var obj = $(this);
+                loadExternalPlayer(obj,obj.attr("video-id"),"vimeo");
+                return ;
+            });
+        }
+    });
+})(jQuery);
